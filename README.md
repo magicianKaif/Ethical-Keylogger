@@ -2,6 +2,8 @@
 
 ![MIT License](https://img.shields.io/badge/license-MIT-green.svg)
 
+**Author:** [magicianKaif](https://github.com/magicianKaif)
+
 ## Overview
 
 **Ethical-Keylogger** is a C#-based keylogging tool designed for corporate environments to facilitate responsible employee activity tracking. The intent is to provide organizations with insights into system usage and potential security risks, while adhering to legal and ethical monitoring practices.
@@ -65,4 +67,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ---
 
-**Author:** [magicianKaif](https://github.com/magicianKaif)
+
